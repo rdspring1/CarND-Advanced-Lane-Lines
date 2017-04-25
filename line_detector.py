@@ -42,48 +42,47 @@ def region_of_interest(img):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
-def threshold(img, sobel_kernel=3, s_thresh=(100, 225), sx_thresh=(20, 75), sy_thresh=(40, 60), mag_thresh=(50, 105)):
+def threshold(img):
     """
         Use color transforms, gradients, etc., to create a thresholded binary image.
     """    
     img_cpy = np.copy(img)
+    g_channel = img_cpy[:,:,1]
+    r_channel = img_cpy[:,:,2]
     
-    # Convert to HSV color space and separate the V channel
+    # Convert to HSV color space
     hsv = cv2.cvtColor(img_cpy, cv2.COLOR_BGR2HLS).astype(np.float)
+    h_channel = hsv[:,:,0]
     l_channel = hsv[:,:,1]
     s_channel = hsv[:,:,2]
     
-    sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
-    sobely = cv2.Sobel(l_channel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    # Threshold Hue channel - For Yellow Lines
+    yellow_h_thresh=(0, 45)
+    yellow_s_thresh = (80, 255)
+    yellow_l_thresh = (100, 255)
+    yellow_binary = np.zeros_like(h_channel)
+    yellow_binary[(s_channel >= yellow_s_thresh[0]) & (s_channel <= yellow_s_thresh[1])
+             & (l_channel >= yellow_l_thresh[0]) & (l_channel <= yellow_l_thresh[1]) 
+             & (h_channel >= yellow_h_thresh[0]) & (h_channel <= yellow_h_thresh[1])] = 1
     
-    abs_sobelx = np.absolute(sobelx)
-    abs_sobely = np.absolute(sobely)
-    
-    # directional gradient
-    scaled_sobelx = np.uint8(255 * abs_sobelx / np.max(abs_sobelx))
-    scaled_sobely = np.uint8(255 * abs_sobely / np.max(abs_sobely))
-    
-    # magnitude
-    abs_sobel = np.sqrt(np.power(sobelx, 2.0) + np.power(sobely, 2.0))
-    scaled_sobel = np.uint8(255 * abs_sobel/np.max(abs_sobel))
-    
-    # Threshold x/y gradient
-    sxybinary = np.zeros_like(scaled_sobel)
-    sxybinary[(scaled_sobelx >= sx_thresh[0]) & (scaled_sobelx <= sx_thresh[1])] = 1
-    #sxybinary[(scaled_sobely >= sy_thresh[0]) & (scaled_sobely <= sy_thresh[1])] = 1
-    
-    # Threshold magnitude
-    mag_binary = np.zeros_like(scaled_sobel)
-    #mag_binary[(scaled_sobel >= mag_thresh[0]) & (scaled_sobel <= mag_thresh[1])] = 1
-    
-    # Threshold color channel
-    s_binary = np.zeros_like(s_channel)
-    s_binary[(s_channel >= s_thresh[0]) & (s_channel <= s_thresh[1])] = 1
+    # Threshold Lightness channel - For White Lines
+    l_thresh=(190, 255)
+    l_binary = np.zeros_like(l_channel)
+    l_binary[(l_channel >= l_thresh[0]) & (l_channel <= l_thresh[1])] = 1
 
+    # Threshold x gradient - Distant Lines - Poor Color
+    sobel_kernel=3
+    sx_thresh=(20, 95)
+    sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)    
+    abs_sobelx = np.absolute(sobelx)
+    scaled_sobelx = np.uint8(255 * abs_sobelx / np.max(abs_sobelx))    
+    sx_binary = np.zeros_like(scaled_sobelx)
+    sx_binary[(scaled_sobelx >= sx_thresh[0]) & (scaled_sobelx <= sx_thresh[1])] = 1
+    
     # Stack each channel
-    color_binary = np.dstack((mag_binary, sxybinary, s_binary))
-    binary_img = np.zeros(img.shape[:-1])
-    binary_img[(mag_binary == 1) | (sxybinary == 1) | (s_binary == 1)] = 1
+    color_binary = np.dstack((sx_binary, l_binary, yellow_binary))
+    binary_img = np.zeros(color_binary.shape[:-1])
+    binary_img[(sx_binary == 1) | (yellow_binary == 1) | (l_binary == 1)] = 1
     return region_of_interest(binary_img), color_binary
 
 def window_mask(width, height, img_ref, center, level):
@@ -119,11 +118,16 @@ def find_window_centroids(image, window_width, window_height, margin):
         l_min_index = int(max(l_center+offset-margin,0))
         l_max_index = int(min(l_center+offset+margin,image.shape[1]))
         l_center = np.argmax(conv_signal[l_min_index:l_max_index])+l_min_index-offset
-        
+        l_max = np.amax(conv_signal[l_min_index:l_max_index])
+
         # Find the best right centroid by using past right center as a reference
         r_min_index = int(max(r_center+offset-margin,0))
         r_max_index = int(min(r_center+offset+margin,image.shape[1]))
         r_center = np.argmax(conv_signal[r_min_index:r_max_index])+r_min_index-offset
+        r_max = np.amax(conv_signal[r_min_index:r_max_index])
+        
+        l_center = -1 if l_max == 0 else l_center
+        r_center = -1 if r_max == 0 else r_center
         
         # Add what we found for that layer
         window_centroids.append((l_center,r_center))
@@ -138,12 +142,15 @@ def plot_window_centroids(img, window_centroids, window_width, window_height):
 
         # Go through each level and draw the windows
         for level in range(0,len(window_centroids)):
+            left, right = window_centroids[level]
             # Window_mask is a function to draw window areas
-            l_mask = window_mask(window_width,window_height,img,window_centroids[level][0],level)
-            r_mask = window_mask(window_width,window_height,img,window_centroids[level][1],level)
-            # Add graphic points from window mask here to total pixels found 
-            l_points[(l_points == 255) | ((l_mask == 1) ) ] = 255
-            r_points[(r_points == 255) | ((r_mask == 1) ) ] = 255
+            # Add graphic points from window mask here to total pixels found
+            if left > 0:
+                l_mask = window_mask(window_width,window_height,img,window_centroids[level][0],level)
+                l_points[(l_points == 255) | ((l_mask == 1) ) ] = 255
+            if right > 0:
+                r_mask = window_mask(window_width,window_height,img,window_centroids[level][1],level)
+                r_points[(r_points == 255) | ((r_mask == 1) ) ] = 255
 
         # Draw the results
         template = np.array(r_points+l_points,np.uint8) # add both left and right window pixels together
@@ -189,6 +196,7 @@ def curvature(img, left, right):
     # Calculate the new radii of curvature
     left_curverad_real = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
     right_curverad_real = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+
     # Now our radius of curvature is in meters
     #print(left_curverad_real, 'm', right_curverad_real, 'm')
     return img, left_fitx, right_fitx

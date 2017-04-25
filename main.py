@@ -12,9 +12,9 @@ height = 720
 width = 1280
 
 # Window settings
-window_width = 50 
+window_width = 25
 window_height = 80 # Break image into 9 vertical layers since image height is 720
-margin = 100 # How much to slide left and right for searching
+margin = 50 # How much to slide left and right for searching
 
 """
     Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
@@ -38,9 +38,9 @@ ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, (width,
 
 # Perspective Transformation Settings
 # define 4 source points src = np.float32([[,],[,],[,],[,]])
-src = np.float32([[1150, height], [690, 450], [595, 450], [220, height]])
+src = np.float32([[1110, height], [690, 450], [595, 450], [220, height]])
 # define 4 destination points dst = np.float32([[,],[,],[,],[,]])
-dst = np.float32([[1020, height], [1000, 0], [300, 0], [300, height]])
+dst = np.float32([[1000, height], [1000, 0], [350, 0], [350, height]])
 
 # use cv2.getPerspectiveTransform() to get M, the transform matrix
 M = cv2.getPerspectiveTransform(src, dst)
@@ -58,5 +58,5 @@ def process_image(img):
     result = draw(rgb_undist, left_pts, right_pts, Minv, width, height)
     return result
 
-VideoFileClip("challenge.mp4").fl_image(process_image).write_videofile('output.mp4', audio=False)
+VideoFileClip("challenge_video.mp4").fl_image(process_image).write_videofile('output.mp4', audio=False)
 
