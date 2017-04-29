@@ -9,8 +9,8 @@
 # * Warp the detected lane boundaries back onto the original image.
 # * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
 
-
 import os
+import math
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
@@ -66,18 +66,18 @@ def threshold(img):
              & (h_channel >= yellow_h_thresh[0]) & (h_channel <= yellow_h_thresh[1])] = 1
     
     # Threshold Lightness channel - For White Lines
-    l_thresh=(190, 255)
+    l_thresh=(180, 255)
     l_binary = np.zeros_like(l_channel)
-    l_binary[(l_channel >= l_thresh[0]) & (l_channel <= l_thresh[1])] = 1
+    l_binary[(s_channel >= 15) & (l_channel >= l_thresh[0]) & (l_channel <= l_thresh[1])] = 1
 
     # Threshold x gradient - Distant Lines - Poor Color
     sobel_kernel=3
-    sx_thresh=(20, 95)
+    sx_thresh=(10, 255)
     sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)    
     abs_sobelx = np.absolute(sobelx)
     scaled_sobelx = np.uint8(255 * abs_sobelx / np.max(abs_sobelx))    
     sx_binary = np.zeros_like(scaled_sobelx)
-    sx_binary[(scaled_sobelx >= sx_thresh[0]) & (scaled_sobelx <= sx_thresh[1])] = 1
+    sx_binary[(l_channel >= 180) & (s_channel >= 10) & (scaled_sobelx >= sx_thresh[0]) & (scaled_sobelx <= sx_thresh[1])] = 1
     
     # Stack each channel
     color_binary = np.dstack((sx_binary, l_binary, yellow_binary))
@@ -128,6 +128,12 @@ def find_window_centroids(image, window_width, window_height, margin):
         
         l_center = -1 if l_max == 0 else l_center
         r_center = -1 if r_max == 0 else r_center
+
+        if l_center == -1 and r_center != -1:
+            l_center = np.argmax(conv_signal[r_min_index:r_max_index]) + l_min_index - offset
+                                                                   
+        if r_center == -1 and l_center != -1:
+            r_center = np.argmax(conv_signal[l_min_index:l_max_index]) + r_min_index - offset
         
         # Add what we found for that layer
         window_centroids.append((l_center,r_center))
@@ -146,10 +152,10 @@ def plot_window_centroids(img, window_centroids, window_width, window_height):
             # Window_mask is a function to draw window areas
             # Add graphic points from window mask here to total pixels found
             if left > 0:
-                l_mask = window_mask(window_width,window_height,img,window_centroids[level][0],level)
+                l_mask = window_mask(window_width,window_height,img,left,level)
                 l_points[(l_points == 255) | ((l_mask == 1) ) ] = 255
             if right > 0:
-                r_mask = window_mask(window_width,window_height,img,window_centroids[level][1],level)
+                r_mask = window_mask(window_width,window_height,img,right,level)
                 r_points[(r_points == 255) | ((r_mask == 1) ) ] = 255
 
         # Draw the results
@@ -163,47 +169,10 @@ def plot_window_centroids(img, window_centroids, window_width, window_height):
         output = np.array(cv2.merge((img,img,img)),np.uint8)
     return output, np.nonzero(l_points), np.nonzero(r_points)
 
-
-def curvature(img, left, right):
-    ploty = np.linspace(0, 719, num=720)
-    lefty, leftx = left
-    righty, rightx = right
-    
-    # Fit a second order polynomial to pixel positions in each fake lane line
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-    
-    left_pts = np.array([(y, x) for y,x in zip(left_fitx, ploty)], np.int32)
-    right_pts = np.array([(y, x) for y,x in zip(right_fitx, ploty)], np.int32)
-    #cv2.polylines(img, [left_pts], False, (255, 0, 0), thickness=10)
-    #cv2.polylines(img, [right_pts], False, (255, 0, 0), thickness=10)
-
-    y_eval = np.max(ploty)
-    left_curverad = ((1 + (2*left_fit[0]*y_eval + left_fit[1])**2)**1.5) / np.absolute(2*left_fit[0])
-    right_curverad = ((1 + (2*right_fit[0]*y_eval + right_fit[1])**2)**1.5) / np.absolute(2*right_fit[0])
-    #print(left_curverad, right_curverad)
-
-    # Define conversions in x and y from pixels space to meters
-    ym_per_pix = 30/720 # meters per pixel in y dimension
-    xm_per_pix = 3.7/700 # meters per pixel in x dimension
-    
-    # Fit new polynomials to x,y in world space
-    left_fit_cr = np.polyfit(np.array(lefty)*ym_per_pix, np.array(leftx)*xm_per_pix, 2)
-    right_fit_cr = np.polyfit(np.array(righty)*ym_per_pix, np.array(rightx)*xm_per_pix, 2)
-
-    # Calculate the new radii of curvature
-    left_curverad_real = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
-    right_curverad_real = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
-
-    # Now our radius of curvature is in meters
-    #print(left_curverad_real, 'm', right_curverad_real, 'm')
-    return img, left_fitx, right_fitx
-
 def draw(img, left_fitx, right_fitx, Minv, width, height):
-    # Create an image to draw the lines on
     ploty = np.linspace(0, height-1, num=height)
+
+    # Create an image to draw the lines on
     img_zero = np.zeros_like(img).astype(np.uint8)
 
     # Draw the lane onto the warped blank image
@@ -224,3 +193,18 @@ def draw(img, left_fitx, right_fitx, Minv, width, height):
     # Combine the result with the original image
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
     return result
+
+def sanity_check(left_status, right_status, left_fit, right_fit, window_centroids):
+    if not left_status or not right_status:
+        return False
+
+    dist_min = 600
+    dist_max = 800 
+    # Go through each level and draw the windows
+    for level in range(0,len(window_centroids)):
+        left, right = window_centroids[level]
+        if left > 0 and right > 0:
+            dist = math.sqrt(math.pow(left - right, 2.0))
+            if dist < dist_min or dist > dist_max:
+                return False
+    return True
