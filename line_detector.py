@@ -58,32 +58,32 @@ def threshold(img):
     
     # Threshold Hue channel - For Yellow Lines
     yellow_h_thresh=(0, 45)
-    yellow_s_thresh = (80, 255)
-    yellow_l_thresh = (100, 255)
+    yellow_s_thresh = (50, 255)
+    yellow_l_thresh = (50, 255)
     yellow_binary = np.zeros_like(h_channel)
     yellow_binary[(s_channel >= yellow_s_thresh[0]) & (s_channel <= yellow_s_thresh[1])
              & (l_channel >= yellow_l_thresh[0]) & (l_channel <= yellow_l_thresh[1]) 
              & (h_channel >= yellow_h_thresh[0]) & (h_channel <= yellow_h_thresh[1])] = 1
     
     # Threshold Lightness channel - For White Lines
-    l_thresh=(180, 255)
+    l_thresh=(200, 255)
     l_binary = np.zeros_like(l_channel)
-    l_binary[(s_channel >= 15) & (l_channel >= l_thresh[0]) & (l_channel <= l_thresh[1])] = 1
+    l_binary[(l_channel >= l_thresh[0]) & (l_channel <= l_thresh[1])] = 1
 
     # Threshold x gradient - Distant Lines - Poor Color
     sobel_kernel=3
-    sx_thresh=(10, 255)
+    sx_thresh=(5, 255)
     sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)    
     abs_sobelx = np.absolute(sobelx)
     scaled_sobelx = np.uint8(255 * abs_sobelx / np.max(abs_sobelx))    
     sx_binary = np.zeros_like(scaled_sobelx)
-    sx_binary[(l_channel >= 180) & (s_channel >= 10) & (scaled_sobelx >= sx_thresh[0]) & (scaled_sobelx <= sx_thresh[1])] = 1
+    sx_binary[(l_channel >= 120) & (s_channel >= 25) & (scaled_sobelx >= sx_thresh[0]) & (scaled_sobelx <= sx_thresh[1])] = 1
     
     # Stack each channel
     color_binary = np.dstack((sx_binary, l_binary, yellow_binary))
     binary_img = np.zeros(color_binary.shape[:-1])
     binary_img[(sx_binary == 1) | (yellow_binary == 1) | (l_binary == 1)] = 1
-    return region_of_interest(binary_img), color_binary
+    return binary_img, color_binary
 
 def window_mask(width, height, img_ref, center, level):
     output = np.zeros_like(img_ref)
@@ -98,10 +98,10 @@ def find_window_centroids(image, window_width, window_height, margin):
     # and then np.convolve the vertical image slice with the window template 
     
     # Sum quarter bottom of image to get slice, could use a different ratio
-    l_sum = np.sum(image[int(3*image.shape[0]/4):,:int(image.shape[1]/2)], axis=0)
+    l_sum = np.sum(image[int(3*image.shape[0]/4):,:int(image.shape[1]/2)-100], axis=0)
     l_center = np.argmax(np.convolve(window, l_sum))-window_width/2
-    r_sum = np.sum(image[int(3*image.shape[0]/4):,int(image.shape[1]/2):], axis=0)
-    r_center = np.argmax(np.convolve(window,r_sum))-window_width/2+int(image.shape[1]/2)
+    r_sum = np.sum(image[int(3*image.shape[0]/4):,int(image.shape[1]/2)+100:], axis=0)
+    r_center = np.argmax(np.convolve(window,r_sum))-window_width/2+int(image.shape[1]/2)+100
     
     # Add what we found for the first layer
     window_centroids.append((l_center, r_center))
@@ -111,6 +111,8 @@ def find_window_centroids(image, window_width, window_height, margin):
         # convolve the window into the vertical slice of the image
         image_layer = np.sum(image[int(image.shape[0]-(level+1)*window_height):int(image.shape[0]-level*window_height),:], axis=0)
         conv_signal = np.convolve(window, image_layer)
+        prev_l_center = l_center
+        prev_r_center = r_center
         
         # Find the best left centroid by using past left center as a reference
         # Use window_width/2 as offset because convolution signal reference is at right side of window, not center of window
@@ -129,11 +131,17 @@ def find_window_centroids(image, window_width, window_height, margin):
         l_center = -1 if l_max == 0 else l_center
         r_center = -1 if r_max == 0 else r_center
 
+        # Since lane lines are parallel, use opposite window centroid if available
         if l_center == -1 and r_center != -1:
             l_center = np.argmax(conv_signal[r_min_index:r_max_index]) + l_min_index - offset
                                                                    
         if r_center == -1 and l_center != -1:
             r_center = np.argmax(conv_signal[l_min_index:l_max_index]) + r_min_index - offset
+
+        # Otherwise, keep previous window centroid
+        if l_center == -1 and r_center == -1:
+            l_center = prev_l_center
+            r_center = prev_r_center
         
         # Add what we found for that layer
         window_centroids.append((l_center,r_center))
@@ -153,10 +161,10 @@ def plot_window_centroids(img, window_centroids, window_width, window_height):
             # Add graphic points from window mask here to total pixels found
             if left > 0:
                 l_mask = window_mask(window_width,window_height,img,left,level)
-                l_points[(l_points == 255) | ((l_mask == 1) ) ] = 255
+                l_points[(l_mask == 1)] = 255
             if right > 0:
                 r_mask = window_mask(window_width,window_height,img,right,level)
-                r_points[(r_points == 255) | ((r_mask == 1) ) ] = 255
+                r_points[(r_mask == 1)] = 255
 
         # Draw the results
         template = np.array(r_points+l_points,np.uint8) # add both left and right window pixels together
@@ -167,9 +175,15 @@ def plot_window_centroids(img, window_centroids, window_width, window_height):
     else:
         # If no window centers found, just display orginal road image
         output = np.array(cv2.merge((img,img,img)),np.uint8)
-    return output, np.nonzero(l_points), np.nonzero(r_points)
 
-def draw(img, left_fitx, right_fitx, Minv, width, height):
+    bottom_left, bottom_right = window_centroids[0]
+    lane_width = (bottom_right - bottom_left) / 2.0
+    return output, np.nonzero(l_points), np.nonzero(r_points), bottom_left+lane_width
+
+def img_string(img, string, pos):
+    return cv2.putText(img, string, pos, cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+
+def draw(img, left_fitx, right_fitx, Minv, left_curverad, right_curverad, center, width, height):
     ploty = np.linspace(0, height-1, num=height)
 
     # Create an image to draw the lines on
@@ -192,19 +206,22 @@ def draw(img, left_fitx, right_fitx, Minv, width, height):
     
     # Combine the result with the original image
     result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
+    curvature = (left_curverad + right_curverad) / 2.0
+    result = img_string(result, "Radius of Curvature= {:.2f}m".format(curvature), (50, 50))
+    result = img_string(result, "Center Offset = {:.3f}m".format(center), (50, 100))
     return result
 
 def sanity_check(left_status, right_status, left_fit, right_fit, window_centroids):
     if not left_status or not right_status:
         return False
 
-    dist_min = 600
-    dist_max = 800 
+    dist_min = 300
+    dist_max = 750 
     # Go through each level and draw the windows
     for level in range(0,len(window_centroids)):
         left, right = window_centroids[level]
         if left > 0 and right > 0:
-            dist = math.sqrt(math.pow(left - right, 2.0))
+            dist = abs(left - right)
             if dist < dist_min or dist > dist_max:
                 return False
     return True

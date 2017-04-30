@@ -57,17 +57,19 @@ To demonstrate this step, I will describe how I apply the distortion correction 
 I used a combination of three filters to create my thresholded binary image (thresholding steps at cells 5, 6, 7).
 
 1) My first filter is calibrated for detecting yellow lines. It is a combination of thresholds on the HLS color space.
-Hue - (0, 45)
-Saturation - (80, 255)
-Lighting - (80, 255)
++ Hue - (0, 45)
++ Saturation - (80, 255)
++ Lighting - (80, 255)
 This Hue range covers between red and dull yellow colors. 
 The Saturation and Lightness thresholds detects dull yellow lines while avoiding the gray parts of the street or the dark shadows.
 
 2) My second filter is a simple threshold on the Lightness value for detecting white lines.
++ Lighting - (200, 255)
 
-3) My third filter is a Sobel X-Axis gradient. However, I combine this gradient filter with basic Saturation and Lightness minimum threshold.
-This filter detects distant yellow and white lines, which are important for determining the curvature of the lane.
-The Saturation and Lightness thresholds prevent the filter from detecting spurious black lines.
+3) My third filter is a Sobel X-Axis gradient. However, I combine this gradient filter with two basic Saturation and Lightness minimum thresholds. This filter detects distant yellow and white lines, which are important for determining the curvature of the lane. The Saturation and Lightness thresholds prevent the filter from detecting spurious lines.
++ Lighting (120, 255)
++ Saturation (25, 255)
++ SX_threshold (5, 255)
 
 Here is an example of my output for this step.
 ![alt text][image3]
@@ -136,20 +138,20 @@ Here is an example of my result on a test image:
 
 ### Pipeline (video)
 
-Here is [my result](./project_result.mp4) for the project video.
-Here is [my result](./challenge_result.mp4) for the challenge video.
++ Here is [my result](./project_result.mp4) for the project video.
++ Here is [my result](./challenge_result.mp4) for the challenge video.
 
 ---
 
 ### Discussion
 Briefly discuss any problems / issues you faced in your implementation of this project.
 
-####1. Where will your pipeline likely fail?
+#### 1. Where will your pipeline likely fail?
 My pipeline fails to detect sharp curves under difficult lighting conditions.
 The pixels are too faint and distant, so my pipeline does not pick them up.
 Since my pipeline fails to detect that part of the curve, there is a lag between the drawn lane area and the actual road.
 
-####2. What could you do to make it more robust?
+#### 2. What could you do to make it more robust?
 Perhaps, I should tune a pair of binary image functions for finding lane lines in very bright or dark conditions.
 
 I implemented a few basic features to improve the robustness of my pipeline.

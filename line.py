@@ -4,7 +4,6 @@ from collections import deque
 # Define a class to receive the characteristics of each line detection
 class Line():
     def __init__(self, N=10):
-        self.N = N
         # was the line detected in the last iteration?
         self.detected = False  
         #x values for detected line pixels
@@ -46,6 +45,9 @@ class Line():
         return True, np.polyfit(y, x, 2)
 
     def avg(self, height):
+        if len(self.recent_fit) == 0:
+            return False, [], 0
+
         #polynomial coefficients averaged over the last n iterations
         self.best_fit = np.mean(self.recent_fit, axis=0)
 
@@ -53,12 +55,9 @@ class Line():
         # Calculate x values for current polynomial coefficients
         fitx = self.best_fit[0]*ploty**2 + self.best_fit[1]*ploty + self.best_fit[2]
 
-        # x values of the last n fits of the line
-        self.recent_xfitted.append(fitx)
-
         #average x values of the fitted line over the last n iterations
         self.bestx = np.mean(self.recent_xfitted, axis=0)
-        return self.bestx
+        return True, self.bestx, self.radius_of_curvature
 
     def update(self, pts, fit, height):
         ploty = np.linspace(0, height-1, num=height)
@@ -99,4 +98,4 @@ class Line():
         
         # Now our radius of curvature is in meters
         #print(curverad_real, 'm')
-        return self.bestx
+        return self.bestx, self.radius_of_curvature

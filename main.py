@@ -6,6 +6,10 @@ from IPython.display import HTML
 from line_detector import threshold, find_window_centroids, plot_window_centroids, draw, sanity_check
 from line import Line
 
+# Define conversions in x and y from pixels space to meters
+ym_per_pix = 30/720 # meters per pixel in y dimension
+xm_per_pix = 3.7/700 # meters per pixel in x dimension
+
 # Calibration Settings
 nx = 9
 ny = 6
@@ -13,9 +17,9 @@ height = 720
 width = 1280
 
 # Window settings
-window_width = 25
+window_width = 50
 window_height = 80 # Break image into 9 vertical layers since image height is 720
-margin = 25 # How much to slide left and right for searching
+margin = 100 # How much to slide left and right for searching
 
 """
     Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
@@ -57,19 +61,25 @@ def process_image(img):
     binary_img, color_binary = threshold(undist)
     warped = cv2.warpPerspective(binary_img, M, (width, height), flags=cv2.INTER_NEAREST)
     window_centroids = find_window_centroids(warped, window_width, window_height, margin)
-    output, left, right = plot_window_centroids(warped, window_centroids, window_width, window_height)
-    #status, left_pts, right_pts = curvature(undist, left, right, height)
+    output, left, right, center_pix = plot_window_centroids(warped, window_centroids, window_width, window_height)
+
+    center_diff = center_pix - (width / 2.0)
+    center_real = center_diff * xm_per_pix
 
     left_status, left_fit = left_line.curvature(left)
     right_status, right_fit = right_line.curvature(right)
 
     if not sanity_check(left_status, right_status, left_fit, right_fit, window_centroids):
-        left_pts = left_line.avg(height)
-        right_pts = right_line.avg(height)
-        return draw(rgb_undist, left_pts, right_pts, Minv, width, height)
-    else:
-        left_pts = left_line.update(left, left_fit, height)
-        right_pts = right_line.update(right, right_fit, height)
-        return draw(rgb_undist, left_pts, right_pts, Minv, width, height)
+        left_status, left_pts, left_curverad = left_line.avg(height)
+        right_status, right_pts, right_curverad = right_line.avg(height)
 
-VideoFileClip("challenge.mp4").fl_image(process_image).write_videofile('output.mp4', audio=False)
+        if not left_status or not right_status:
+            return rgb_undist
+
+        return draw(rgb_undist, left_pts, right_pts, Minv, left_curverad, right_curverad, center_real, width, height)
+    else:
+        left_pts, left_curverad = left_line.update(left, left_fit, height)
+        right_pts, right_curverad = right_line.update(right, right_fit, height)
+        return draw(rgb_undist, left_pts, right_pts, Minv, left_curverad, right_curverad, center_real, width, height)
+
+VideoFileClip("challenge_video.mp4").fl_image(process_image).write_videofile('challenge_result.mp4', audio=False)
