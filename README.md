@@ -27,8 +27,6 @@ The goals / steps of this project are the following:
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view)
 
 ---
-### Writeup / README
-
 ### Camera Calibration
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
@@ -108,7 +106,7 @@ The layer is summed vertically and the covolutution operator is used to find the
 The search for the next layer's center is restricted to the 'margin' surround the previous layer's center.
 This process is repeated for each layer in the image.
 
-2) Plot_Window_Centroids - This function applies a mask to the binary image in order to select the lane line pixels around the window centroids.
+2) Plot_Window_Centroids - This function applies a mask to the binary image in order to select the lane line pixels around the window centroids. If an insignificant number of pixels is found in the masked area of the binary image, then the entire mask around the window centroid is selected. This case occurs when part of the line is covered in shadows or the lane line is striped. Keeping the window centroid mask ensures that the polynomial fits the lane pixels nicely.
 
 3) Curvature - This function fits a second-order polynomial using the lane-line pixels detected around the window centroids.
 
@@ -138,6 +136,7 @@ Here is an example of my result on a test image:
 
 ### Pipeline (video)
 
+The python files - 'line.py', 'line_detector.py', and 'main.py' contain a streamlined pipeline for processing the video files.
 + Here is [my result](./project_result.mp4) for the project video.
 + Here is [my result](./challenge_result.mp4) for the challenge video.
 

@@ -6,6 +6,10 @@ class Line():
     def __init__(self, N=10):
         # was the line detected in the last iteration?
         self.detected = False  
+
+        # current base window centroid
+        self.base = 0
+
         #x values for detected line pixels
         self.allx = None  
         #y values for detected line pixels

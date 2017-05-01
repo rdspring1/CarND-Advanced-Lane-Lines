@@ -17,8 +17,8 @@ height = 720
 width = 1280
 
 # Window settings
-window_width = 50
-window_height = 80 # Break image into 9 vertical layers since image height is 720
+window_width = 25
+window_height = 40 # Break image into 9 vertical layers since image height is 720
 margin = 100 # How much to slide left and right for searching
 
 """
@@ -51,7 +51,6 @@ dst = np.float32([[1000, height], [1000, 0], [350, 0], [350, height]])
 M = cv2.getPerspectiveTransform(src, dst)
 Minv = cv2.getPerspectiveTransform(dst, src)
 
-
 left_line = Line()
 right_line = Line()
 
@@ -60,9 +59,12 @@ def process_image(img):
     undist = cv2.cvtColor(rgb_undist, cv2.COLOR_RGB2BGR)
     binary_img, color_binary = threshold(undist)
     warped = cv2.warpPerspective(binary_img, M, (width, height), flags=cv2.INTER_NEAREST)
-    window_centroids = find_window_centroids(warped, window_width, window_height, margin)
+    window_centroids = find_window_centroids(warped, window_width, window_height, margin, left_line.base, right_line.base)
     output, left, right, center_pix = plot_window_centroids(warped, window_centroids, window_width, window_height)
 
+    l, r = window_centroids[0]
+    left_line.base, lmax = l
+    right_line.base, rmax = r
     center_diff = center_pix - (width / 2.0)
     center_real = center_diff * xm_per_pix
 
@@ -82,4 +84,4 @@ def process_image(img):
         right_pts, right_curverad = right_line.update(right, right_fit, height)
         return draw(rgb_undist, left_pts, right_pts, Minv, left_curverad, right_curverad, center_real, width, height)
 
-VideoFileClip("challenge_video.mp4").fl_image(process_image).write_videofile('challenge_result.mp4', audio=False)
+VideoFileClip("harder_challenge_video.mp4").fl_image(process_image).write_videofile('result.mp4', audio=False)
